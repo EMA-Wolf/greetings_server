@@ -138,14 +138,14 @@ app.post("/users/signup", async (req, res) => {
   app.post("/users/login", async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
-      return res.status(400).json({ message: "Email and password are required" });
+      return res.status(400).json({ success: false, message: "Email and password are required" });
     }
   
     try {
       // Fetch the user by email
       const result = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
       if (result.rows.length === 0) {
-        return res.status(404).json({ message: "User not found" });
+        return res.status(404).json({ success: false, message: "User not found" });
       }
   
       const user = result.rows[0];
@@ -153,15 +153,21 @@ app.post("/users/signup", async (req, res) => {
       // Compare the hashed password
       const passwordMatch = await bcrypt.compare(password, user.password);
       if (!passwordMatch) {
-        return res.status(401).json({ message: "Invalid credentials" });
+        return res.status(401).json({ success: false, message: "Invalid credentials" });
       }
   
-      res.json({ user: { id: user.id, name: user.name, email: user.email } });
+      // Respond with user details and success boolean
+      res.json({ 
+        success: true, 
+        message: "Login successful", 
+        user: { id: user.id, name: user.name, email: user.email } 
+      });
     } catch (err) {
       console.error("Error logging in user:", err.stack);
-      res.status(500).json({ message: "Internal Server Error" });
+      res.status(500).json({ success: false, message: "Internal Server Error" });
     }
   });
+  
   
   // READ: Get all users (Admin functionality)
   app.get("/users", async (req, res) => {
