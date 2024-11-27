@@ -3,6 +3,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const pool = require('./config/db');
 const initDB = require('./config/db_init');
+const bcrypt = require('bcrypt'); // Ensure bcrypt is imported
 
 const app = express();
 const PORT = 3000;
@@ -11,7 +12,7 @@ const PORT = 3000;
 app.use(cors('*'));
 app.use(bodyParser.json());
 
-// Initialize the database table
+// InitializeS the database table
 initDB();
 
 // CRUD Endpoints
@@ -108,31 +109,33 @@ app.delete('/greetings/:id', async (req, res) => {
 
 // CREATE: Sign Up a new user
 app.post("/users/signup", async (req, res) => {
-    const { name, email, password } = req.body;
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: "Name, email, and password are required" });
+  const { name, email, password, student_id } = req.body;
+
+  if (!name || !email || !password || !student_id) {
+    return res.status(400).json({ message: "Name, email, password, and student_id are required" });
+  }
+
+  try {
+    // Hash the password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Insert user into the database
+    const result = await pool.query(
+      "INSERT INTO users (name, email, password, student_id) VALUES ($1, $2, $3, $4) RETURNING id, name, email, student_id",
+      [name, email, hashedPassword, student_id]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error("Error signing up user:", err.stack);
+    if (err.code === "23505") { // PostgreSQL unique constraint violation
+      res.status(400).json({ message: "Email or student_id already exists" });
+    } else {
+      res.status(500).json({ message: "Internal Server Error" });
     }
-  
-    try {
-      // Hash the password
-      const hashedPassword = await bcrypt.hash(password, 10);
-  
-      // Insert user into the database
-      const result = await pool.query(
-        "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id, name, email",
-        [name, email, hashedPassword]
-      );
-  
-      res.status(201).json(result.rows[0]);
-    } catch (err) {
-      console.error("Error signing up user:", err.stack);
-      if (err.code === "23505") { // PostgreSQL unique constraint violation
-        res.status(400).json({ message: "Email already exists" });
-      } else {
-        res.status(500).json({ message: "Internal Server Error" });
-      }
-    }
-  });
+  }
+});
+
   
   // READ: Log In a user
   app.post("/users/login", async (req, res) => {
@@ -172,19 +175,23 @@ app.post("/users/signup", async (req, res) => {
   // READ: Get all users (Admin functionality)
   app.get("/users", async (req, res) => {
     try {
-      const result = await pool.query("SELECT id, name, email FROM users");
+      const result = await pool.query("SELECT id, name, email, student_id FROM users");
       res.json(result.rows);
     } catch (err) {
       console.error("Error fetching users:", err.stack);
       res.status(500).json({ message: "Internal Server Error" });
     }
   });
-  
   // READ: Get a single user by ID
   app.get("/users/:id", async (req, res) => {
     const id = parseInt(req.params.id);
+  
+    if (isNaN(id)) {
+      return res.status(400).json({ message: "Invalid ID. Must be a number." });
+    }
+  
     try {
-      const result = await pool.query("SELECT id, name, email FROM users WHERE id = $1", [id]);
+      const result = await pool.query("SELECT id, name, email, student_id FROM users WHERE id = $1", [id]);
       if (result.rows.length === 0) {
         return res.status(404).json({ message: "User not found" });
       }
@@ -195,20 +202,22 @@ app.post("/users/signup", async (req, res) => {
     }
   });
   
+  
   // UPDATE: Update user details
   app.put("/users/:id", async (req, res) => {
     const id = parseInt(req.params.id);
-    const { name, email, password } = req.body;
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: "Name, email, and password are required" });
+    const { name, email, password, student_id } = req.body;
+  
+    if (!name || !email || !password || !student_id) {
+      return res.status(400).json({ message: "Name, email, password, and student_id are required" });
     }
   
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
   
       const result = await pool.query(
-        "UPDATE users SET name = $1, email = $2, password = $3 WHERE id = $4 RETURNING id, name, email",
-        [name, email, hashedPassword, id]
+        "UPDATE users SET name = $1, email = $2, password = $3, student_id = $4 WHERE id = $5 RETURNING id, name, email, student_id",
+        [name, email, hashedPassword, student_id, id]
       );
   
       if (result.rows.length === 0) {
